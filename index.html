@@ -269,21 +269,57 @@
                 roundEnded: false,
                 registrationError: false,
                 reconnectAttempts: 0,
-                maxReconnectAttempts: 5,
+                maxReconnectAttempts: 10,
                 reconnectDelay: 1000,
                 reconnectTimer: null,
+                pingInterval: null,
+                lastPongTime: null,
 
                 init() {
                     this.connectWebSocket();
                     // Add beforeunload event listener to handle page close/refresh
                     window.addEventListener('beforeunload', () => {
-                        if (this.ws) {
-                            this.ws.close(1000, 'Page closed');
-                        }
+                        this.cleanup();
                     });
                 },
 
+                cleanup() {
+                    if (this.ws) {
+                        this.ws.close(1000, 'Page closed');
+                    }
+                    if (this.pingInterval) {
+                        clearInterval(this.pingInterval);
+                        this.pingInterval = null;
+                    }
+                    if (this.reconnectTimer) {
+                        clearTimeout(this.reconnectTimer);
+                        this.reconnectTimer = null;
+                    }
+                    if (this.countdownInterval) {
+                        clearInterval(this.countdownInterval);
+                        this.countdownInterval = null;
+                    }
+                },
+
+                startPingInterval() {
+                    this.lastPongTime = Date.now();
+                    this.pingInterval = setInterval(() => {
+                        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                            // Check if we haven't received a pong in 10 seconds
+                            if (Date.now() - this.lastPongTime > 10000) {
+                                console.log('No pong received, reconnecting...');
+                                this.cleanup();
+                                this.connectWebSocket();
+                                return;
+                            }
+                            this.ws.send(JSON.stringify({ type: 'ping' }));
+                        }
+                    }, 5000);
+                },
+
                 connectWebSocket() {
+                    this.cleanup();
+
                     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
                         Swal.fire({
                             title: 'Connection Error',
@@ -293,12 +329,6 @@
                             color: '#cdd6f4'
                         });
                         return;
-                    }
-
-                    // Clear any existing reconnect timer
-                    if (this.reconnectTimer) {
-                        clearTimeout(this.reconnectTimer);
-                        this.reconnectTimer = null;
                     }
 
                     const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
@@ -312,6 +342,10 @@
                         this.ws.onmessage = (event) => {
                             try {
                                 const message = JSON.parse(event.data);
+                                if (message.type === 'pong') {
+                                    this.lastPongTime = Date.now();
+                                    return;
+                                }
                                 if (message.type === 'game_state') {
                                     this.updateGameState(message.payload);
                                 } else if (message.type === 'error') {
@@ -325,13 +359,16 @@
                         };
 
                         this.ws.onopen = () => {
+                            console.log('WebSocket connected');
                             this.reconnectAttempts = 0;
+                            this.startPingInterval();
                             if (this.isRegistered) {
                                 this.register();
                             }
                         };
 
                         this.ws.onclose = (event) => {
+                            this.cleanup();
                             // Don't show reconnection message for normal closure
                             if (event.code !== 1000) {
                                 if (this.isRegistered) {
@@ -413,13 +450,17 @@
                 },
 
                 updateGameState(state) {
+                    const previousQuestion = this.currentQuestion;
                     this.currentQuestion = state.currentQuestion;
                     this.leaderboard = state.leaderboard;
                     this.allAnswers = state.answers;
                     this.roundEnded = state.roundEnded;
 
-                    // Reset answer submission state on new question
-                    if (this.currentQuestion && !this.allAnswers[this.playerName]?.length) {
+                    // Only reset answer state if it's a new question
+                    if (this.currentQuestion && 
+                        (!previousQuestion || 
+                         previousQuestion.text !== this.currentQuestion.text || 
+                         previousQuestion.AskedAt !== this.currentQuestion.AskedAt)) {
                         this.isAnswerSubmitted = false;
                         this.answerText = '';
                     }

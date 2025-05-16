@@ -178,25 +178,51 @@
                 currentRound: 0,
                 reconnectTimer: null,
                 reconnectAttempts: 0,
-                maxReconnectAttempts: 5,
+                maxReconnectAttempts: 10,
                 reconnectDelay: 1000,
+                pingInterval: null,
+                lastPongTime: null,
 
                 init() {
                     this.connectWebSocket();
                     // Add beforeunload event listener to handle page close/refresh
                     window.addEventListener('beforeunload', () => {
-                        if (this.ws) {
-                            this.ws.close(1000, 'Page closed');
-                        }
+                        this.cleanup();
                     });
                 },
 
-                connectWebSocket() {
-                    // Clear any existing reconnect timer
+                cleanup() {
+                    if (this.ws) {
+                        this.ws.close(1000, 'Page closed');
+                    }
+                    if (this.pingInterval) {
+                        clearInterval(this.pingInterval);
+                        this.pingInterval = null;
+                    }
                     if (this.reconnectTimer) {
                         clearTimeout(this.reconnectTimer);
                         this.reconnectTimer = null;
                     }
+                },
+
+                startPingInterval() {
+                    this.lastPongTime = Date.now();
+                    this.pingInterval = setInterval(() => {
+                        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                            // Check if we haven't received a pong in 10 seconds
+                            if (Date.now() - this.lastPongTime > 10000) {
+                                console.log('No pong received, reconnecting...');
+                                this.cleanup();
+                                this.connectWebSocket();
+                                return;
+                            }
+                            this.ws.send(JSON.stringify({ type: 'ping' }));
+                        }
+                    }, 5000);
+                },
+
+                connectWebSocket() {
+                    this.cleanup();
 
                     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
                         this.connectionError = 'Maximum reconnection attempts reached. Please refresh the page.';
@@ -214,6 +240,10 @@
                         this.ws.onmessage = (event) => {
                             try {
                                 const message = JSON.parse(event.data);
+                                if (message.type === 'pong') {
+                                    this.lastPongTime = Date.now();
+                                    return;
+                                }
                                 if (message.type === 'game_state') {
                                     this.updateGameState(message.payload);
                                 } else if (message.type === 'error') {
@@ -225,8 +255,10 @@
                         };
 
                         this.ws.onopen = () => {
+                            console.log('WebSocket connected');
                             this.connectionError = null;
                             this.reconnectAttempts = 0;
+                            this.startPingInterval();
                             this.ws.send(JSON.stringify({
                                 type: 'register',
                                 payload: {
@@ -236,6 +268,7 @@
                         };
 
                         this.ws.onclose = (event) => {
+                            this.cleanup();
                             // Don't show reconnection message for normal closure
                             if (event.code !== 1000) {
                                 if (!this.connectionError) {

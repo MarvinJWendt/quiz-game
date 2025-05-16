@@ -92,6 +92,11 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 }
 
 func handlePlayerConnection(conn *websocket.Conn) {
+	// Set ping handler
+	conn.SetPingHandler(func(appData string) error {
+		return conn.WriteControl(websocket.PongMessage, []byte{}, time.Now().Add(time.Second))
+	})
+
 	// Read initial registration message
 	var msg Message
 	if err := conn.ReadJSON(&msg); err != nil {
@@ -159,6 +164,15 @@ func handlePlayerConnection(conn *websocket.Conn) {
 				log.Printf("Read error from %s: %v", registration.Name, err)
 			}
 			break
+		}
+
+		if msg.Type == "ping" {
+			// Respond to ping with pong
+			if err := conn.WriteJSON(Message{Type: "pong"}); err != nil {
+				log.Printf("Error sending pong to %s: %v", registration.Name, err)
+				break
+			}
+			continue
 		}
 
 		if registration.IsMod {
