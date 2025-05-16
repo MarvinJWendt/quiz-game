@@ -176,48 +176,88 @@
                 leaderboard: [],
                 allAnswers: {},
                 currentRound: 0,
+                reconnectTimer: null,
+                reconnectAttempts: 0,
+                maxReconnectAttempts: 5,
+                reconnectDelay: 1000,
 
                 init() {
                     this.connectWebSocket();
+                    // Add beforeunload event listener to handle page close/refresh
+                    window.addEventListener('beforeunload', () => {
+                        if (this.ws) {
+                            this.ws.close(1000, 'Page closed');
+                        }
+                    });
                 },
 
                 connectWebSocket() {
+                    // Clear any existing reconnect timer
+                    if (this.reconnectTimer) {
+                        clearTimeout(this.reconnectTimer);
+                        this.reconnectTimer = null;
+                    }
+
+                    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+                        this.connectionError = 'Maximum reconnection attempts reached. Please refresh the page.';
+                        return;
+                    }
+
                     const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
                     const wsUrl = isLocalhost 
                         ? 'ws://localhost:8080/ws'
                         : 'wss://quiz-api.mjw.dev/ws';
                     
-                    this.ws = new WebSocket(wsUrl);
-                    
-                    this.ws.onmessage = (event) => {
-                        const message = JSON.parse(event.data);
-                        if (message.type === 'game_state') {
-                            this.updateGameState(message.payload);
-                        } else if (message.type === 'error') {
-                            this.connectionError = message.payload.message;
-                        }
-                    };
-
-                    this.ws.onopen = () => {
-                        this.connectionError = null;
-                        this.ws.send(JSON.stringify({
-                            type: 'register',
-                            payload: {
-                                isMod: true
+                    try {
+                        this.ws = new WebSocket(wsUrl);
+                        
+                        this.ws.onmessage = (event) => {
+                            try {
+                                const message = JSON.parse(event.data);
+                                if (message.type === 'game_state') {
+                                    this.updateGameState(message.payload);
+                                } else if (message.type === 'error') {
+                                    this.connectionError = message.payload.message;
+                                }
+                            } catch (error) {
+                                console.error('Error processing message:', error);
                             }
-                        }));
-                    };
+                        };
 
-                    this.ws.onclose = () => {
-                        if (!this.connectionError) {
-                            this.connectionError = 'Connection lost. Attempting to reconnect...';
-                        }
-                        setTimeout(() => this.connectWebSocket(), 1000);
-                    };
+                        this.ws.onopen = () => {
+                            this.connectionError = null;
+                            this.reconnectAttempts = 0;
+                            this.ws.send(JSON.stringify({
+                                type: 'register',
+                                payload: {
+                                    isMod: true
+                                }
+                            }));
+                        };
 
-                    this.ws.onerror = () => {
-                        this.connectionError = 'Failed to connect to the server.';
-                    };
+                        this.ws.onclose = (event) => {
+                            // Don't show reconnection message for normal closure
+                            if (event.code !== 1000) {
+                                if (!this.connectionError) {
+                                    this.connectionError = 'Connection lost. Attempting to reconnect...';
+                                }
+                                this.reconnectAttempts++;
+                                const delay = Math.min(this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1), 10000);
+                                this.reconnectTimer = setTimeout(() => this.connectWebSocket(), delay);
+                            }
+                        };
+
+                        this.ws.onerror = (error) => {
+                            console.error('WebSocket error:', error);
+                            this.connectionError = 'Failed to connect to the server.';
+                        };
+                    } catch (error) {
+                        console.error('Error creating WebSocket:', error);
+                        this.connectionError = 'Failed to create WebSocket connection.';
+                        this.reconnectAttempts++;
+                        const delay = Math.min(this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1), 10000);
+                        this.reconnectTimer = setTimeout(() => this.connectWebSocket(), delay);
+                    }
                 },
 
                 askQuestion() {

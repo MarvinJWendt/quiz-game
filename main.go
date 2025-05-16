@@ -19,15 +19,16 @@ var upgrader = websocket.Upgrader{
 }
 
 type GameState struct {
-	CurrentQuestion  *Question           `json:"currentQuestion,omitempty"`
-	Players          map[string]*Player  `json:"players"`
-	Answers          map[string][]Answer `json:"answers"`
-	Leaderboard      []LeaderboardEntry  `json:"leaderboard"`
-	CountdownEndTime *time.Time          `json:"countdownEndTime,omitempty"`
-	Round            int                 `json:"round"`
-	RoundEnded       bool                `json:"roundEnded"`
-	Moderator        *websocket.Conn     `json:"-"`
-	mu               sync.RWMutex
+	CurrentQuestion     *Question           `json:"currentQuestion,omitempty"`
+	Players             map[string]*Player  `json:"players"`
+	DisconnectedPlayers map[string]*Player  `json:"-"` // Store disconnected players
+	Answers             map[string][]Answer `json:"answers"`
+	Leaderboard         []LeaderboardEntry  `json:"leaderboard"`
+	CountdownEndTime    *time.Time          `json:"countdownEndTime,omitempty"`
+	Round               int                 `json:"round"`
+	RoundEnded          bool                `json:"roundEnded"`
+	Moderator           *websocket.Conn     `json:"-"`
+	mu                  sync.RWMutex
 }
 
 type Question struct {
@@ -44,10 +45,11 @@ type Player struct {
 }
 
 type Answer struct {
-	PlayerName  string    `json:"playerName"`
-	Text        string    `json:"text"`
-	Status      string    `json:"status"` // "pending", "accepted", "rejected"
-	SubmittedAt time.Time `json:"submittedAt"`
+	PlayerName  string     `json:"playerName"`
+	Text        string     `json:"text"`
+	Status      string     `json:"status"` // "pending", "accepted", "rejected"
+	SubmittedAt time.Time  `json:"submittedAt"`
+	JudgedAt    *time.Time `json:"judgedAt,omitempty"` // Track when the answer was judged
 }
 
 type LeaderboardEntry struct {
@@ -61,10 +63,11 @@ type Message struct {
 }
 
 var game = GameState{
-	Players:     make(map[string]*Player),
-	Answers:     make(map[string][]Answer),
-	Leaderboard: make([]LeaderboardEntry, 0),
-	Round:       0,
+	Players:             make(map[string]*Player),
+	DisconnectedPlayers: make(map[string]*Player),
+	Answers:             make(map[string][]Answer),
+	Leaderboard:         make([]LeaderboardEntry, 0),
+	Round:               0,
 }
 
 func main() {
@@ -116,12 +119,31 @@ func handlePlayerConnection(conn *websocket.Conn) {
 	if registration.IsMod {
 		game.Moderator = conn
 	} else {
-		game.Players[registration.Name] = &Player{
-			Name:       registration.Name,
-			Score:      0,
-			IsMod:      false,
-			Connection: conn,
+		// Check if player is reconnecting
+		var player *Player
+		if disconnectedPlayer, exists := game.DisconnectedPlayers[registration.Name]; exists {
+			// Reconnecting player - restore their data
+			player = disconnectedPlayer
+			player.Connection = conn
+			delete(game.DisconnectedPlayers, registration.Name)
+		} else if _, exists := game.Players[registration.Name]; exists {
+			// Player trying to connect with existing name
+			game.mu.Unlock()
+			conn.WriteJSON(Message{
+				Type:    "error",
+				Payload: json.RawMessage(`{"message": "Name already taken"}`),
+			})
+			return
+		} else {
+			// New player
+			player = &Player{
+				Name:       registration.Name,
+				Score:      0,
+				IsMod:      false,
+				Connection: conn,
+			}
 		}
+		game.Players[registration.Name] = player
 		updateLeaderboard()
 	}
 	game.mu.Unlock()
@@ -151,8 +173,12 @@ func handlePlayerConnection(conn *websocket.Conn) {
 	if registration.IsMod {
 		game.Moderator = nil
 	} else {
-		delete(game.Players, registration.Name)
-		updateLeaderboard()
+		// Store player data instead of deleting
+		if player, exists := game.Players[registration.Name]; exists {
+			game.DisconnectedPlayers[registration.Name] = player
+			delete(game.Players, registration.Name)
+			updateLeaderboard()
+		}
 	}
 	game.mu.Unlock()
 }
@@ -211,14 +237,19 @@ func handleModeratorMessage(msg Message) {
 
 		if answers, exists := game.Answers[judge.PlayerName]; exists && len(answers) > 0 {
 			lastAnswer := &answers[len(answers)-1]
-			if judge.Accept {
-				lastAnswer.Status = "accepted"
-				targetPlayer.Score++
-			} else {
-				lastAnswer.Status = "rejected"
+			// Only judge if the answer is still pending and hasn't been judged before
+			if lastAnswer.Status == "pending" && lastAnswer.JudgedAt == nil {
+				now := time.Now()
+				lastAnswer.JudgedAt = &now
+				if judge.Accept {
+					lastAnswer.Status = "accepted"
+					targetPlayer.Score++
+				} else {
+					lastAnswer.Status = "rejected"
+				}
+				updateLeaderboard()
+				broadcastGameState()
 			}
-			updateLeaderboard()
-			broadcastGameState()
 		}
 
 	case "start_countdown":

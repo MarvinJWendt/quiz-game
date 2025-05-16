@@ -271,9 +271,16 @@
                 reconnectAttempts: 0,
                 maxReconnectAttempts: 5,
                 reconnectDelay: 1000,
+                reconnectTimer: null,
 
                 init() {
                     this.connectWebSocket();
+                    // Add beforeunload event listener to handle page close/refresh
+                    window.addEventListener('beforeunload', () => {
+                        if (this.ws) {
+                            this.ws.close(1000, 'Page closed');
+                        }
+                    });
                 },
 
                 connectWebSocket() {
@@ -288,53 +295,74 @@
                         return;
                     }
 
+                    // Clear any existing reconnect timer
+                    if (this.reconnectTimer) {
+                        clearTimeout(this.reconnectTimer);
+                        this.reconnectTimer = null;
+                    }
+
                     const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
                     const wsUrl = isLocalhost 
                         ? 'ws://localhost:8080/ws'
                         : 'wss://quiz-api.mjw.dev/ws';
                     
-                    this.ws = new WebSocket(wsUrl);
-                    
-                    this.ws.onmessage = (event) => {
-                        const message = JSON.parse(event.data);
-                        if (message.type === 'game_state') {
-                            this.updateGameState(message.payload);
-                        } else if (message.type === 'error') {
-                            this.handleError(message.payload.message);
-                        } else if (message.type === 'reset') {
-                            this.handleReset();
-                        }
-                    };
-
-                    this.ws.onopen = () => {
-                        this.reconnectAttempts = 0;
-                        if (this.isRegistered) {
-                            this.register();
-                        }
-                    };
-
-                    this.ws.onclose = () => {
-                        if (this.isRegistered) {
-                            Swal.fire({
-                                title: 'Connection Lost',
-                                text: 'Attempting to reconnect...',
-                                icon: 'warning',
-                                background: '#1e1e2e',
-                                color: '#cdd6f4',
-                                showConfirmButton: false,
-                                allowOutsideClick: false,
-                                didOpen: () => {
-                                    Swal.showLoading();
+                    try {
+                        this.ws = new WebSocket(wsUrl);
+                        
+                        this.ws.onmessage = (event) => {
+                            try {
+                                const message = JSON.parse(event.data);
+                                if (message.type === 'game_state') {
+                                    this.updateGameState(message.payload);
+                                } else if (message.type === 'error') {
+                                    this.handleError(message.payload.message);
+                                } else if (message.type === 'reset') {
+                                    this.handleReset();
                                 }
-                            });
-                        }
-                        this.reconnectAttempts++;
-                        setTimeout(() => this.connectWebSocket(), this.reconnectDelay * Math.min(this.reconnectAttempts, 5));
-                    };
+                            } catch (error) {
+                                console.error('Error processing message:', error);
+                            }
+                        };
 
-                    this.ws.onerror = () => {
-                        // Handle in onclose
-                    };
+                        this.ws.onopen = () => {
+                            this.reconnectAttempts = 0;
+                            if (this.isRegistered) {
+                                this.register();
+                            }
+                        };
+
+                        this.ws.onclose = (event) => {
+                            // Don't show reconnection message for normal closure
+                            if (event.code !== 1000) {
+                                if (this.isRegistered) {
+                                    Swal.fire({
+                                        title: 'Connection Lost',
+                                        text: 'Attempting to reconnect...',
+                                        icon: 'warning',
+                                        background: '#1e1e2e',
+                                        color: '#cdd6f4',
+                                        showConfirmButton: false,
+                                        allowOutsideClick: false,
+                                        didOpen: () => {
+                                            Swal.showLoading();
+                                        }
+                                    });
+                                }
+                                this.reconnectAttempts++;
+                                const delay = Math.min(this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1), 10000);
+                                this.reconnectTimer = setTimeout(() => this.connectWebSocket(), delay);
+                            }
+                        };
+
+                        this.ws.onerror = (error) => {
+                            console.error('WebSocket error:', error);
+                        };
+                    } catch (error) {
+                        console.error('Error creating WebSocket:', error);
+                        this.reconnectAttempts++;
+                        const delay = Math.min(this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1), 10000);
+                        this.reconnectTimer = setTimeout(() => this.connectWebSocket(), delay);
+                    }
                 },
 
                 handleError(message) {
