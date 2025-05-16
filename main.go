@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -91,7 +92,9 @@ func handlePlayerConnection(conn *websocket.Conn) {
 	// Read initial registration message
 	var msg Message
 	if err := conn.ReadJSON(&msg); err != nil {
-		log.Println("Read error:", err)
+		if !isNormalClosure(err) {
+			log.Println("Registration read error:", err)
+		}
 		return
 	}
 
@@ -111,16 +114,6 @@ func handlePlayerConnection(conn *websocket.Conn) {
 
 	game.mu.Lock()
 	if registration.IsMod {
-		// If there's already a moderator, reject the connection
-		if game.Moderator != nil {
-			game.mu.Unlock()
-			conn.WriteJSON(Message{
-				Type:    "error",
-				Payload: json.RawMessage(`{"message": "A moderator is already connected"}`),
-			})
-			conn.Close()
-			return
-		}
 		game.Moderator = conn
 	} else {
 		game.Players[registration.Name] = &Player{
@@ -140,7 +133,9 @@ func handlePlayerConnection(conn *websocket.Conn) {
 	for {
 		var msg Message
 		if err := conn.ReadJSON(&msg); err != nil {
-			log.Println("Read error:", err)
+			if !isNormalClosure(err) {
+				log.Printf("Read error from %s: %v", registration.Name, err)
+			}
 			break
 		}
 
@@ -160,6 +155,17 @@ func handlePlayerConnection(conn *websocket.Conn) {
 		updateLeaderboard()
 	}
 	game.mu.Unlock()
+}
+
+// isNormalClosure checks if the error is from a normal WebSocket closure
+func isNormalClosure(err error) bool {
+	if websocket.IsCloseError(err,
+		websocket.CloseNormalClosure,
+		websocket.CloseGoingAway,
+		websocket.CloseNoStatusReceived) {
+		return true
+	}
+	return strings.Contains(err.Error(), "websocket: close 1006")
 }
 
 func handleModeratorMessage(msg Message) {
