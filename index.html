@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quiz Game</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        // Catppuccin Mocha theme colors
+                        base: {
+                            mantle: '#181825',
+                            crust: '#11111b',
+                            base: '#1e1e2e',
+                            surface0: '#313244',
+                            surface1: '#45475a',
+                            text: '#cdd6f4',
+                            subtext: '#a6adc8',
+                            overlay0: '#6c7086',
+                            blue: '#89b4fa',
+                            lavender: '#b4befe',
+                            sapphire: '#74c7ec',
+                            sky: '#89dceb',
+                            teal: '#94e2d5',
+                            green: '#a6e3a1',
+                            yellow: '#f9e2af',
+                            peach: '#fab387',
+                            maroon: '#eba0ac',
+                            red: '#f38ba8',
+                            mauve: '#cba6f7',
+                            pink: '#f5c2e7',
+                            flamingo: '#f2cdcd',
+                            rosewater: '#f5e0dc'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-base-mantle min-h-screen text-base-text" x-data="quizGame()" x-init="init()">
+    <!-- Registration Modal -->
+    <div x-show="!isRegistered" class="fixed inset-0 bg-base-crust bg-opacity-50 flex items-center justify-center">
+        <div class="bg-base-base p-8 rounded-lg shadow-lg border border-base-surface0">
+            <h2 class="text-2xl font-bold mb-4 text-base-text">Enter Your Name</h2>
+            <input type="text" x-model="playerName" @keyup.enter="register"
+                class="w-full p-2 rounded mb-4 bg-base-surface0 text-base-text border border-base-surface1 focus:border-base-blue focus:ring-1 focus:ring-base-blue outline-none"
+                placeholder="Your name">
+            <button @click="register"
+                class="w-full bg-base-blue text-base-mantle py-2 rounded hover:bg-base-sapphire transition-colors">
+                Join Game
+            </button>
+        </div>
+    </div>
+
+    <!-- Main Game Interface -->
+    <div x-show="isRegistered" class="container mx-auto px-4 py-8">
+        <!-- Question Section -->
+        <div class="mb-8 text-center" x-show="currentQuestion">
+            <div class="text-3xl font-bold mb-4 text-base-text" x-text="currentQuestion?.text || 'Waiting for question...'"></div>
+            
+            <!-- Countdown Timer -->
+            <div x-show="countdownTime" class="text-xl font-semibold mb-4 text-base-yellow">
+                Time remaining: <span x-text="countdownTime"></span>
+            </div>
+
+            <!-- Answer Input -->
+            <div class="max-w-md mx-auto">
+                <textarea x-model="answerText" 
+                    :disabled="!currentQuestion || isAnswerSubmitted"
+                    class="w-full p-4 rounded-lg mb-4 h-32 bg-base-surface0 text-base-text border border-base-surface1 focus:border-base-blue focus:ring-1 focus:ring-base-blue outline-none"
+                    placeholder="Type your answer here..."></textarea>
+                <button @click="submitAnswer" 
+                    :disabled="!currentQuestion || isAnswerSubmitted"
+                    :class="{
+                        'bg-base-surface1 cursor-not-allowed': !currentQuestion || isAnswerSubmitted,
+                        'bg-base-green hover:bg-base-teal': currentQuestion && !isAnswerSubmitted
+                    }"
+                    class="w-full text-base-mantle py-3 rounded-lg font-semibold transition-colors">
+                    Submit Answer
+                </button>
+            </div>
+        </div>
+
+        <!-- Game Info Section -->
+        <div class="grid md:grid-cols-2 gap-8">
+            <!-- Leaderboard -->
+            <div class="bg-base-base rounded-lg shadow-lg p-6 border border-base-surface0">
+                <h2 class="text-2xl font-bold mb-4 text-base-mauve">Leaderboard</h2>
+                <div class="space-y-2">
+                    <template x-for="entry in leaderboard" :key="entry.playerName">
+                        <div class="flex justify-between items-center py-2 border-b border-base-surface0">
+                            <span x-text="entry.playerName" class="text-base-text"></span>
+                            <span class="font-semibold text-base-green" x-text="entry.score"></span>
+                        </div>
+                    </template>
+                </div>
+            </div>
+
+            <!-- All Answers -->
+            <div x-show="roundEnded" class="bg-base-base rounded-lg shadow-lg p-6 border border-base-surface0">
+                <h2 class="text-2xl font-bold mb-4 text-base-mauve">Round Answers</h2>
+                <div class="space-y-2">
+                    <template x-for="(answers, playerName) in allAnswers" :key="playerName">
+                        <template x-for="answer in answers" :key="answer.submittedAt">
+                            <div class="border-b border-base-surface0 py-2">
+                                <div class="flex justify-between items-center">
+                                    <span x-text="playerName" class="font-semibold text-base-text"></span>
+                                    <span :class="{
+                                        'text-base-yellow': answer.status === 'pending',
+                                        'text-base-green': answer.status === 'accepted',
+                                        'text-base-red': answer.status === 'rejected'
+                                    }" x-text="answer.status"></span>
+                                </div>
+                                <p class="mt-1 text-base-subtext" x-text="answer.text"></p>
+                            </div>
+                        </template>
+                    </template>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function quizGame() {
+            return {
+                ws: null,
+                isRegistered: false,
+                playerName: '',
+                currentQuestion: null,
+                answerText: '',
+                isAnswerSubmitted: false,
+                leaderboard: [],
+                allAnswers: {},
+                countdownTime: null,
+                countdownInterval: null,
+                roundEnded: false,
+
+                init() {
+                    this.connectWebSocket();
+                },
+
+                connectWebSocket() {
+                    const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+                    const wsUrl = isLocalhost 
+                        ? 'ws://localhost:8080/ws'
+                        : 'wss://quiz-api.mjw.dev/ws';
+                    
+                    this.ws = new WebSocket(wsUrl);
+                    
+                    this.ws.onmessage = (event) => {
+                        const message = JSON.parse(event.data);
+                        if (message.type === 'game_state') {
+                            this.updateGameState(message.payload);
+                        } else if (message.type === 'reset') {
+                            this.handleReset();
+                        }
+                    };
+
+                    this.ws.onclose = () => {
+                        setTimeout(() => this.connectWebSocket(), 1000);
+                    };
+                },
+
+                register() {
+                    if (!this.playerName.trim()) {
+                        Swal.fire({
+                            title: 'Error!',
+                            text: 'Please enter your name',
+                            icon: 'error',
+                            background: '#1e1e2e',
+                            color: '#cdd6f4'
+                        });
+                        return;
+                    }
+
+                    this.ws.send(JSON.stringify({
+                        type: 'register',
+                        payload: {
+                            name: this.playerName,
+                            isMod: false
+                        }
+                    }));
+
+                    this.isRegistered = true;
+                },
+
+                submitAnswer() {
+                    if (!this.answerText.trim()) {
+                        Swal.fire({
+                            title: 'Error!',
+                            text: 'Please enter an answer',
+                            icon: 'error',
+                            background: '#1e1e2e',
+                            color: '#cdd6f4'
+                        });
+                        return;
+                    }
+
+                    this.ws.send(JSON.stringify({
+                        type: 'submit_answer',
+                        payload: {
+                            text: this.answerText
+                        }
+                    }));
+
+                    this.isAnswerSubmitted = true;
+                },
+
+                updateGameState(state) {
+                    this.currentQuestion = state.currentQuestion;
+                    this.leaderboard = state.leaderboard;
+                    this.allAnswers = state.answers;
+                    this.roundEnded = state.roundEnded;
+
+                    // Reset answer submission state on new question
+                    if (this.currentQuestion && !this.allAnswers[this.playerName]?.length) {
+                        this.isAnswerSubmitted = false;
+                        this.answerText = '';
+                    }
+
+                    // Handle countdown
+                    if (state.countdownEndTime) {
+                        this.startCountdown(new Date(state.countdownEndTime));
+                    } else {
+                        this.stopCountdown();
+                    }
+                },
+
+                startCountdown(endTime) {
+                    if (this.countdownInterval) {
+                        clearInterval(this.countdownInterval);
+                    }
+
+                    const updateCountdown = () => {
+                        const now = new Date().getTime();
+                        const distance = endTime - now;
+
+                        if (distance < 0) {
+                            this.stopCountdown();
+                            this.isAnswerSubmitted = true;
+                            return;
+                        }
+
+                        const seconds = Math.floor(distance / 1000);
+                        this.countdownTime = `${seconds}s`;
+                    };
+
+                    updateCountdown();
+                    this.countdownInterval = setInterval(updateCountdown, 1000);
+                },
+
+                stopCountdown() {
+                    if (this.countdownInterval) {
+                        clearInterval(this.countdownInterval);
+                        this.countdownInterval = null;
+                    }
+                    this.countdownTime = null;
+                },
+
+                handleReset() {
+                    this.isRegistered = false;
+                    this.playerName = '';
+                    this.currentQuestion = null;
+                    this.answerText = '';
+                    this.isAnswerSubmitted = false;
+                    this.leaderboard = [];
+                    this.allAnswers = {};
+                    this.countdownTime = null;
+                    if (this.countdownInterval) {
+                        clearInterval(this.countdownInterval);
+                        this.countdownInterval = null;
+                    }
+                }
+            };
+        }
+    </script>
+</body>
+</html> 

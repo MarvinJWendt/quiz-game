@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quiz Game - Moderator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        // Catppuccin Mocha theme colors
+                        base: {
+                            mantle: '#181825',
+                            crust: '#11111b',
+                            base: '#1e1e2e',
+                            surface0: '#313244',
+                            surface1: '#45475a',
+                            text: '#cdd6f4',
+                            subtext: '#a6adc8',
+                            overlay0: '#6c7086',
+                            blue: '#89b4fa',
+                            lavender: '#b4befe',
+                            sapphire: '#74c7ec',
+                            sky: '#89dceb',
+                            teal: '#94e2d5',
+                            green: '#a6e3a1',
+                            yellow: '#f9e2af',
+                            peach: '#fab387',
+                            maroon: '#eba0ac',
+                            red: '#f38ba8',
+                            mauve: '#cba6f7',
+                            pink: '#f5c2e7',
+                            flamingo: '#f2cdcd',
+                            rosewater: '#f5e0dc'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-base-mantle min-h-screen text-base-text" x-data="moderatorGame()" x-init="init()">
+    <!-- Connection Error Modal -->
+    <div x-show="connectionError" class="fixed inset-0 bg-base-crust bg-opacity-50 flex items-center justify-center">
+        <div class="bg-base-base p-8 rounded-lg shadow-lg border border-base-surface0">
+            <h2 class="text-2xl font-bold mb-4 text-base-red">Connection Error</h2>
+            <p class="text-base-text mb-4" x-text="connectionError"></p>
+            <button @click="connectWebSocket()"
+                class="w-full bg-base-blue text-base-mantle py-2 rounded hover:bg-base-sapphire transition-colors">
+                Try Again
+            </button>
+        </div>
+    </div>
+
+    <!-- Main Moderator Interface -->
+    <div x-show="!connectionError" class="container mx-auto px-4 py-8">
+        <!-- Control Panel -->
+        <div class="grid md:grid-cols-2 gap-8 mb-8">
+            <!-- Question Controls -->
+            <div class="bg-base-base rounded-lg shadow-lg p-6 border border-base-surface0">
+                <h2 class="text-2xl font-bold mb-4 text-base-mauve">Ask Question</h2>
+                <div class="space-y-4">
+                    <div>
+                        <label class="block mb-2 text-base-text">Question Type</label>
+                        <select x-model="questionType" 
+                            class="w-full p-2 rounded bg-base-surface0 text-base-text border border-base-surface1 focus:border-base-blue focus:ring-1 focus:ring-base-blue outline-none">
+                            <option value="text">Text Question</option>
+                            <option value="number">Number Question</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block mb-2 text-base-text">Question Text</label>
+                        <textarea x-model="questionText" 
+                            class="w-full p-2 rounded h-32 bg-base-surface0 text-base-text border border-base-surface1 focus:border-base-blue focus:ring-1 focus:ring-base-blue outline-none"
+                            placeholder="Enter your question..."></textarea>
+                    </div>
+                    <button @click="askQuestion"
+                        class="w-full bg-base-green text-base-mantle py-2 rounded hover:bg-base-teal transition-colors">
+                        Ask Question
+                    </button>
+                </div>
+            </div>
+
+            <!-- Timer Controls -->
+            <div class="bg-base-base rounded-lg shadow-lg p-6 border border-base-surface0">
+                <h2 class="text-2xl font-bold mb-4 text-base-mauve">Timer Control</h2>
+                <div class="space-y-4">
+                    <div>
+                        <label class="block mb-2 text-base-text">Countdown Duration (seconds)</label>
+                        <input type="number" x-model="countdownSeconds" 
+                            class="w-full p-2 rounded bg-base-surface0 text-base-text border border-base-surface1 focus:border-base-blue focus:ring-1 focus:ring-base-blue outline-none"
+                            min="5" step="5" value="15">
+                    </div>
+                    <button @click="startCountdown"
+                        class="w-full bg-base-blue text-base-mantle py-2 rounded hover:bg-base-sapphire transition-colors">
+                        Start Countdown
+                    </button>
+                    <button @click="endRound"
+                        class="w-full bg-base-yellow text-base-mantle py-2 rounded hover:bg-base-peach transition-colors">
+                        End Round
+                    </button>
+                    <button @click="resetGame"
+                        class="w-full bg-base-red text-base-mantle py-2 rounded hover:bg-base-maroon transition-colors">
+                        Reset Game
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Game Status -->
+        <div class="grid md:grid-cols-2 gap-8">
+            <!-- Leaderboard -->
+            <div class="bg-base-base rounded-lg shadow-lg p-6 border border-base-surface0">
+                <h2 class="text-2xl font-bold mb-4 text-base-mauve">Leaderboard</h2>
+                <div class="space-y-2">
+                    <template x-for="entry in leaderboard" :key="entry.playerName">
+                        <div class="flex justify-between items-center py-2 border-b border-base-surface0">
+                            <span x-text="entry.playerName" class="text-base-text"></span>
+                            <span class="font-semibold text-base-green" x-text="entry.score"></span>
+                        </div>
+                    </template>
+                </div>
+            </div>
+
+            <!-- Current Answers -->
+            <div class="bg-base-base rounded-lg shadow-lg p-6 border border-base-surface0">
+                <h2 class="text-2xl font-bold mb-4 text-base-mauve">Current Answers</h2>
+                <div class="space-y-4">
+                    <template x-for="(answers, playerName) in allAnswers" :key="playerName">
+                        <template x-for="answer in answers" :key="answer.submittedAt">
+                            <div class="border p-4 rounded-lg" :class="{
+                                'bg-base-surface0': answer.status === 'pending',
+                                'bg-[#1e322b]': answer.status === 'accepted',
+                                'bg-[#2d1e1e]': answer.status === 'rejected'
+                            }">
+                                <div class="flex justify-between items-center mb-2">
+                                    <span x-text="playerName" class="font-semibold text-base-text"></span>
+                                    <div class="space-x-2" x-show="answer.status === 'pending'">
+                                        <button @click="judgeAnswer(playerName, true)"
+                                            class="px-3 py-1 bg-base-green text-base-mantle rounded hover:bg-base-teal transition-colors">
+                                            Accept
+                                        </button>
+                                        <button @click="judgeAnswer(playerName, false)"
+                                            class="px-3 py-1 bg-base-red text-base-mantle rounded hover:bg-base-maroon transition-colors">
+                                            Reject
+                                        </button>
+                                    </div>
+                                    <span x-show="answer.status !== 'pending'"
+                                        :class="{
+                                            'text-base-green': answer.status === 'accepted',
+                                            'text-base-red': answer.status === 'rejected'
+                                        }"
+                                        x-text="answer.status"></span>
+                                </div>
+                                <p class="text-base-subtext" x-text="answer.text"></p>
+                            </div>
+                        </template>
+                    </template>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function moderatorGame() {
+            return {
+                ws: null,
+                connectionError: null,
+                questionType: 'text',
+                questionText: '',
+                countdownSeconds: 15,
+                leaderboard: [],
+                allAnswers: {},
+                currentRound: 0,
+
+                init() {
+                    this.connectWebSocket();
+                },
+
+                connectWebSocket() {
+                    const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+                    const wsUrl = isLocalhost 
+                        ? 'ws://localhost:8080/ws'
+                        : 'wss://quiz-api.mjw.dev/ws';
+                    
+                    this.ws = new WebSocket(wsUrl);
+                    
+                    this.ws.onmessage = (event) => {
+                        const message = JSON.parse(event.data);
+                        if (message.type === 'game_state') {
+                            this.updateGameState(message.payload);
+                        } else if (message.type === 'error') {
+                            this.connectionError = message.payload.message;
+                        }
+                    };
+
+                    this.ws.onopen = () => {
+                        this.connectionError = null;
+                        this.ws.send(JSON.stringify({
+                            type: 'register',
+                            payload: {
+                                isMod: true
+                            }
+                        }));
+                    };
+
+                    this.ws.onclose = () => {
+                        if (!this.connectionError) {
+                            this.connectionError = 'Connection lost. Attempting to reconnect...';
+                        }
+                        setTimeout(() => this.connectWebSocket(), 1000);
+                    };
+
+                    this.ws.onerror = () => {
+                        this.connectionError = 'Failed to connect to the server.';
+                    };
+                },
+
+                askQuestion() {
+                    if (!this.questionText.trim()) {
+                        Swal.fire({
+                            title: 'Error!',
+                            text: 'Please enter a question',
+                            icon: 'error',
+                            background: '#1e1e2e',
+                            color: '#cdd6f4'
+                        });
+                        return;
+                    }
+
+                    this.ws.send(JSON.stringify({
+                        type: 'ask_question',
+                        payload: {
+                            text: this.questionText,
+                            type: this.questionType
+                        }
+                    }));
+
+                    this.questionText = '';
+                },
+
+                startCountdown() {
+                    if (!this.countdownSeconds || this.countdownSeconds < 5) {
+                        Swal.fire({
+                            title: 'Error!',
+                            text: 'Please enter a valid countdown duration (minimum 5 seconds)',
+                            icon: 'error',
+                            background: '#1e1e2e',
+                            color: '#cdd6f4'
+                        });
+                        return;
+                    }
+
+                    this.ws.send(JSON.stringify({
+                        type: 'start_countdown',
+                        payload: {
+                            seconds: this.countdownSeconds
+                        }
+                    }));
+                },
+
+                endRound() {
+                    this.ws.send(JSON.stringify({
+                        type: 'end_round'
+                    }));
+                },
+
+                judgeAnswer(playerName, accept) {
+                    this.ws.send(JSON.stringify({
+                        type: 'judge_answer',
+                        payload: {
+                            playerName: playerName,
+                            round: this.currentRound,
+                            accept: accept
+                        }
+                    }));
+                },
+
+                resetGame() {
+                    Swal.fire({
+                        title: 'Are you sure?',
+                        text: "This will reset all scores and make players re-enter their names!",
+                        icon: 'warning',
+                        showCancelButton: true,
+                        confirmButtonColor: '#89b4fa',
+                        cancelButtonColor: '#f38ba8',
+                        confirmButtonText: 'Yes, reset it!',
+                        background: '#1e1e2e',
+                        color: '#cdd6f4'
+                    }).then((result) => {
+                        if (result.isConfirmed) {
+                            this.ws.send(JSON.stringify({
+                                type: 'reset_game'
+                            }));
+                        }
+                    });
+                },
+
+                updateGameState(state) {
+                    this.leaderboard = state.leaderboard;
+                    this.allAnswers = state.answers;
+                    this.currentRound = state.round;
+                }
+            };
+        }
+    </script>
+</body>
+</html> 
