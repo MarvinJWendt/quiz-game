@@ -91,7 +91,7 @@
                 <div class="space-y-4">
                     <div>
                         <label class="block mb-2 text-base-text">Countdown Duration (seconds)</label>
-                        <input type="number" x-model="countdownSeconds" 
+                        <input type="number" x-model.number="countdownSeconds" 
                             class="w-full p-2 rounded bg-base-surface0 text-base-text border border-base-surface1 focus:border-base-blue focus:ring-1 focus:ring-base-blue outline-none"
                             min="5" step="5" value="15">
                     </div>
@@ -317,7 +317,8 @@
                 },
 
                 startCountdown() {
-                    if (!this.countdownSeconds || this.countdownSeconds < 5) {
+                    const seconds = parseInt(this.countdownSeconds, 10);
+                    if (!seconds || seconds < 5) {
                         Swal.fire({
                             title: 'Error!',
                             text: 'Please enter a valid countdown duration (minimum 5 seconds)',
@@ -331,7 +332,7 @@
                     this.ws.send(JSON.stringify({
                         type: 'start_countdown',
                         payload: {
-                            seconds: this.countdownSeconds
+                            seconds: seconds
                         }
                     }));
                 },

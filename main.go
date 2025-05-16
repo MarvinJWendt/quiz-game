@@ -271,7 +271,11 @@ func handleModeratorMessage(msg Message) {
 			Seconds int `json:"seconds"`
 		}
 		if err := json.Unmarshal(msg.Payload, &countdown); err != nil {
-			log.Println("Countdown parse error:", err)
+			log.Printf("Countdown parse error: %v. Payload: %s", err, string(msg.Payload))
+			return
+		}
+		if countdown.Seconds < 5 {
+			log.Printf("Invalid countdown duration: %d seconds (minimum 5)", countdown.Seconds)
 			return
 		}
 		endTime := time.Now().Add(time.Duration(countdown.Seconds) * time.Second)
