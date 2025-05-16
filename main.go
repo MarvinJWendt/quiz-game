@@ -308,6 +308,18 @@ func sendGameState(conn *websocket.Conn) {
 
 func broadcastGameState() {
 	payload := marshalGameState()
+
+	// Send to moderator
+	if game.Moderator != nil {
+		if err := game.Moderator.WriteJSON(Message{
+			Type:    "game_state",
+			Payload: payload,
+		}); err != nil {
+			log.Println("Broadcast error to moderator:", err)
+		}
+	}
+
+	// Send to players
 	for _, player := range game.Players {
 		if err := player.Connection.WriteJSON(Message{
 			Type:    "game_state",

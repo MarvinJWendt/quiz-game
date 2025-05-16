@@ -7,6 +7,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@formkit/auto-animate@0.8.1/dist/auto-animate.min.js"></script>
     <script>
         tailwind.config = {
             theme: {
@@ -37,87 +38,213 @@
                             flamingo: '#f2cdcd',
                             rosewater: '#f5e0dc'
                         }
+                    },
+                    animation: {
+                        'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                        'bounce-slow': 'bounce 2s infinite',
                     }
                 }
             }
         }
     </script>
+    <style>
+        @keyframes gradient {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+        .gradient-bg {
+            background: linear-gradient(-45deg, #1e1e2e, #181825, #313244, #45475a);
+            background-size: 400% 400%;
+            animation: gradient 15s ease infinite;
+        }
+        .fade-enter {
+            animation: fadeIn 0.5s ease-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .shake {
+            animation: shake 0.82s cubic-bezier(.36,.07,.19,.97) both;
+        }
+        @keyframes shake {
+            10%, 90% { transform: translate3d(-1px, 0, 0); }
+            20%, 80% { transform: translate3d(2px, 0, 0); }
+            30%, 50%, 70% { transform: translate3d(-4px, 0, 0); }
+            40%, 60% { transform: translate3d(4px, 0, 0); }
+        }
+    </style>
 </head>
-<body class="bg-base-mantle min-h-screen text-base-text" x-data="quizGame()" x-init="init()">
+<body class="gradient-bg min-h-screen text-base-text" x-data="quizGame()" x-init="init()">
     <!-- Registration Modal -->
-    <div x-show="!isRegistered" class="fixed inset-0 bg-base-crust bg-opacity-50 flex items-center justify-center">
-        <div class="bg-base-base p-8 rounded-lg shadow-lg border border-base-surface0">
-            <h2 class="text-2xl font-bold mb-4 text-base-text">Enter Your Name</h2>
+    <div x-show="!isRegistered" 
+        class="fixed inset-0 bg-base-crust bg-opacity-75 backdrop-blur-sm flex items-center justify-center p-4"
+        x-transition:enter="transition ease-out duration-300"
+        x-transition:enter-start="opacity-0"
+        x-transition:enter-end="opacity-100"
+        x-transition:leave="transition ease-in duration-200"
+        x-transition:leave-start="opacity-100"
+        x-transition:leave-end="opacity-0">
+        <div class="bg-base-base p-8 rounded-lg shadow-xl border border-base-surface0 max-w-md w-full"
+            x-transition:enter="transition ease-out duration-300"
+            x-transition:enter-start="opacity-0 transform scale-95"
+            x-transition:enter-end="opacity-100 transform scale-100">
+            <h2 class="text-3xl font-bold mb-6 text-base-text text-center">Join Quiz Game</h2>
             <input type="text" x-model="playerName" @keyup.enter="register"
-                class="w-full p-2 rounded mb-4 bg-base-surface0 text-base-text border border-base-surface1 focus:border-base-blue focus:ring-1 focus:ring-base-blue outline-none"
-                placeholder="Your name">
+                maxlength="50"
+                class="w-full p-3 rounded-lg mb-4 bg-base-surface0 text-base-text border-2 border-base-surface1 focus:border-base-blue focus:ring-2 focus:ring-base-blue focus:ring-opacity-50 outline-none transition-all duration-200"
+                placeholder="Enter your name"
+                :class="{'shake': registrationError}">
             <button @click="register"
-                class="w-full bg-base-blue text-base-mantle py-2 rounded hover:bg-base-sapphire transition-colors">
+                class="w-full bg-base-blue text-base-mantle py-3 rounded-lg font-semibold hover:bg-base-sapphire transition-all duration-200 transform hover:scale-105">
                 Join Game
             </button>
         </div>
     </div>
 
     <!-- Main Game Interface -->
-    <div x-show="isRegistered" class="container mx-auto px-4 py-8">
+    <div x-show="isRegistered" class="container mx-auto px-4 py-8 space-y-8">
+        <!-- Welcome Message -->
+        <div class="text-center mb-8">
+            <h1 class="text-2xl font-bold text-base-text">
+                Welcome, <span class="text-base-blue" x-text="playerName"></span>!
+            </h1>
+        </div>
+
         <!-- Question Section -->
-        <div class="mb-8 text-center" x-show="currentQuestion">
-            <div class="text-3xl font-bold mb-4 text-base-text" x-text="currentQuestion?.text || 'Waiting for question...'"></div>
+        <div x-show="currentQuestion" 
+            class="max-w-2xl mx-auto bg-base-base rounded-lg shadow-xl p-6 border-2 border-base-surface0"
+            x-transition:enter="transition ease-out duration-300"
+            x-transition:enter-start="opacity-0 transform -translate-y-4"
+            x-transition:enter-end="opacity-100 transform translate-y-0">
+            
+            <!-- Question Text -->
+            <div class="text-2xl md:text-3xl font-bold mb-6 text-center" 
+                x-text="currentQuestion?.text || 'Waiting for question...'"
+                :class="{'animate-pulse-slow': !currentQuestion}">
+            </div>
             
             <!-- Countdown Timer -->
-            <div x-show="countdownTime" class="text-xl font-semibold mb-4 text-base-yellow">
-                Time remaining: <span x-text="countdownTime"></span>
+            <div x-show="countdownTime" 
+                class="flex justify-center items-center mb-6">
+                <div class="text-2xl font-bold" 
+                    :class="{
+                        'text-base-yellow': parseInt(countdownTime) > 5,
+                        'text-base-red animate-bounce': parseInt(countdownTime) <= 5
+                    }">
+                    <span x-text="countdownTime"></span>
+                </div>
             </div>
 
             <!-- Answer Input -->
-            <div class="max-w-md mx-auto">
+            <div class="space-y-4">
                 <textarea x-model="answerText" 
                     :disabled="!currentQuestion || isAnswerSubmitted"
-                    class="w-full p-4 rounded-lg mb-4 h-32 bg-base-surface0 text-base-text border border-base-surface1 focus:border-base-blue focus:ring-1 focus:ring-base-blue outline-none"
+                    maxlength="1000"
+                    class="w-full p-4 rounded-lg mb-2 h-32 bg-base-surface0 text-base-text border-2 border-base-surface1 focus:border-base-blue focus:ring-2 focus:ring-base-blue focus:ring-opacity-50 outline-none transition-all duration-200 resize-none"
+                    :class="{
+                        'opacity-50 cursor-not-allowed': !currentQuestion || isAnswerSubmitted,
+                        'hover:border-base-blue': currentQuestion && !isAnswerSubmitted
+                    }"
                     placeholder="Type your answer here..."></textarea>
+                
+                <div class="flex justify-between items-center text-sm text-base-overlay0">
+                    <span x-show="answerText.length > 0">
+                        <span x-text="answerText.length"></span>/1000
+                    </span>
+                </div>
+
                 <button @click="submitAnswer" 
                     :disabled="!currentQuestion || isAnswerSubmitted"
+                    class="w-full py-3 rounded-lg font-semibold transition-all duration-200 transform"
                     :class="{
                         'bg-base-surface1 cursor-not-allowed': !currentQuestion || isAnswerSubmitted,
-                        'bg-base-green hover:bg-base-teal': currentQuestion && !isAnswerSubmitted
-                    }"
-                    class="w-full text-base-mantle py-3 rounded-lg font-semibold transition-colors">
-                    Submit Answer
+                        'bg-base-green hover:bg-base-teal hover:scale-105': currentQuestion && !isAnswerSubmitted
+                    }">
+                    <span x-show="!isAnswerSubmitted">Submit Answer</span>
+                    <span x-show="isAnswerSubmitted" class="flex items-center justify-center">
+                        <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                        </svg>
+                        Answer Submitted
+                    </span>
                 </button>
             </div>
         </div>
 
         <!-- Game Info Section -->
-        <div class="grid md:grid-cols-2 gap-8">
+        <div class="grid md:grid-cols-2 gap-8 mt-8">
             <!-- Leaderboard -->
-            <div class="bg-base-base rounded-lg shadow-lg p-6 border border-base-surface0">
-                <h2 class="text-2xl font-bold mb-4 text-base-mauve">Leaderboard</h2>
-                <div class="space-y-2">
-                    <template x-for="entry in leaderboard" :key="entry.playerName">
-                        <div class="flex justify-between items-center py-2 border-b border-base-surface0">
-                            <span x-text="entry.playerName" class="text-base-text"></span>
+            <div class="bg-base-base rounded-lg shadow-xl p-6 border-2 border-base-surface0">
+                <h2 class="text-2xl font-bold mb-4 text-base-mauve flex items-center">
+                    <svg class="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                            d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z">
+                        </path>
+                    </svg>
+                    Leaderboard
+                </h2>
+                <div class="space-y-2" x-data="{ parent: $el }" x-init="autoAnimate(parent)">
+                    <template x-for="(entry, index) in leaderboard" :key="entry.playerName">
+                        <div class="flex justify-between items-center p-3 rounded-lg transition-colors duration-200"
+                            :class="{
+                                'bg-base-surface0': entry.playerName === playerName,
+                                'hover:bg-base-surface0/50': entry.playerName !== playerName
+                            }">
+                            <div class="flex items-center space-x-3">
+                                <span class="text-base-overlay0" x-text="`#${index + 1}`"></span>
+                                <span x-text="entry.playerName" 
+                                    :class="{'text-base-blue font-semibold': entry.playerName === playerName}">
+                                </span>
+                            </div>
                             <span class="font-semibold text-base-green" x-text="entry.score"></span>
                         </div>
                     </template>
                 </div>
             </div>
 
-            <!-- All Answers -->
-            <div x-show="roundEnded" class="bg-base-base rounded-lg shadow-lg p-6 border border-base-surface0">
-                <h2 class="text-2xl font-bold mb-4 text-base-mauve">Round Answers</h2>
-                <div class="space-y-2">
+            <!-- Round Answers -->
+            <div x-show="roundEnded" 
+                class="bg-base-base rounded-lg shadow-xl p-6 border-2 border-base-surface0"
+                x-transition:enter="transition ease-out duration-300"
+                x-transition:enter-start="opacity-0 transform translate-y-4"
+                x-transition:enter-end="opacity-100 transform translate-y-0">
+                <h2 class="text-2xl font-bold mb-4 text-base-mauve flex items-center">
+                    <svg class="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                            d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2">
+                        </path>
+                    </svg>
+                    Round Answers
+                </h2>
+                <div class="space-y-4" x-data="{ parent: $el }" x-init="autoAnimate(parent)">
                     <template x-for="(answers, playerName) in allAnswers" :key="playerName">
                         <template x-for="answer in answers" :key="answer.submittedAt">
-                            <div class="border-b border-base-surface0 py-2">
-                                <div class="flex justify-between items-center">
-                                    <span x-text="playerName" class="font-semibold text-base-text"></span>
+                            <div class="p-4 rounded-lg transition-all duration-200"
+                                :class="{
+                                    'bg-base-surface0': answer.status === 'pending',
+                                    'bg-[#1e322b]': answer.status === 'accepted',
+                                    'bg-[#2d1e1e]': answer.status === 'rejected',
+                                    'border-2': playerName === playerName,
+                                    'border-base-surface1': playerName === playerName && answer.status === 'pending',
+                                    'border-base-green': playerName === playerName && answer.status === 'accepted',
+                                    'border-base-red': playerName === playerName && answer.status === 'rejected'
+                                }">
+                                <div class="flex justify-between items-center mb-2">
+                                    <span x-text="playerName" 
+                                        :class="{
+                                            'font-semibold text-base-blue': playerName === playerName,
+                                            'text-base-text': playerName !== playerName
+                                        }">
+                                    </span>
                                     <span :class="{
                                         'text-base-yellow': answer.status === 'pending',
                                         'text-base-green': answer.status === 'accepted',
                                         'text-base-red': answer.status === 'rejected'
                                     }" x-text="answer.status"></span>
                                 </div>
-                                <p class="mt-1 text-base-subtext" x-text="answer.text"></p>
+                                <p class="text-base-subtext break-words" x-text="answer.text"></p>
                             </div>
                         </template>
                     </template>
@@ -140,12 +267,27 @@
                 countdownTime: null,
                 countdownInterval: null,
                 roundEnded: false,
+                registrationError: false,
+                reconnectAttempts: 0,
+                maxReconnectAttempts: 5,
+                reconnectDelay: 1000,
 
                 init() {
                     this.connectWebSocket();
                 },
 
                 connectWebSocket() {
+                    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+                        Swal.fire({
+                            title: 'Connection Error',
+                            text: 'Unable to connect to the server. Please refresh the page to try again.',
+                            icon: 'error',
+                            background: '#1e1e2e',
+                            color: '#cdd6f4'
+                        });
+                        return;
+                    }
+
                     const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
                     const wsUrl = isLocalhost 
                         ? 'ws://localhost:8080/ws'
@@ -157,25 +299,61 @@
                         const message = JSON.parse(event.data);
                         if (message.type === 'game_state') {
                             this.updateGameState(message.payload);
+                        } else if (message.type === 'error') {
+                            this.handleError(message.payload.message);
                         } else if (message.type === 'reset') {
                             this.handleReset();
                         }
                     };
 
-                    this.ws.onclose = () => {
-                        setTimeout(() => this.connectWebSocket(), 1000);
+                    this.ws.onopen = () => {
+                        this.reconnectAttempts = 0;
+                        if (this.isRegistered) {
+                            this.register();
+                        }
                     };
+
+                    this.ws.onclose = () => {
+                        if (this.isRegistered) {
+                            Swal.fire({
+                                title: 'Connection Lost',
+                                text: 'Attempting to reconnect...',
+                                icon: 'warning',
+                                background: '#1e1e2e',
+                                color: '#cdd6f4',
+                                showConfirmButton: false,
+                                allowOutsideClick: false,
+                                didOpen: () => {
+                                    Swal.showLoading();
+                                }
+                            });
+                        }
+                        this.reconnectAttempts++;
+                        setTimeout(() => this.connectWebSocket(), this.reconnectDelay * Math.min(this.reconnectAttempts, 5));
+                    };
+
+                    this.ws.onerror = () => {
+                        // Handle in onclose
+                    };
+                },
+
+                handleError(message) {
+                    if (message.includes('name')) {
+                        this.registrationError = true;
+                        setTimeout(() => this.registrationError = false, 1000);
+                    }
+                    Swal.fire({
+                        title: 'Error',
+                        text: message,
+                        icon: 'error',
+                        background: '#1e1e2e',
+                        color: '#cdd6f4'
+                    });
                 },
 
                 register() {
                     if (!this.playerName.trim()) {
-                        Swal.fire({
-                            title: 'Error!',
-                            text: 'Please enter your name',
-                            icon: 'error',
-                            background: '#1e1e2e',
-                            color: '#cdd6f4'
-                        });
+                        this.handleError('Please enter your name');
                         return;
                     }
 
@@ -192,13 +370,7 @@
 
                 submitAnswer() {
                     if (!this.answerText.trim()) {
-                        Swal.fire({
-                            title: 'Error!',
-                            text: 'Please enter an answer',
-                            icon: 'error',
-                            background: '#1e1e2e',
-                            color: '#cdd6f4'
-                        });
+                        this.handleError('Please enter an answer');
                         return;
                     }
 
@@ -276,6 +448,14 @@
                         clearInterval(this.countdownInterval);
                         this.countdownInterval = null;
                     }
+                    
+                    Swal.fire({
+                        title: 'Game Reset',
+                        text: 'The game has been reset. Please enter your name to rejoin.',
+                        icon: 'info',
+                        background: '#1e1e2e',
+                        color: '#cdd6f4'
+                    });
                 }
             };
         }
