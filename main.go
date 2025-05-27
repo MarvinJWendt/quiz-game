@@ -140,6 +140,13 @@ func handlePlayerConnection(conn *websocket.Conn) {
 	game.mu.Lock()
 	if registration.IsMod {
 		game.Moderator = conn
+		// Send current game state to moderator
+		if err := conn.WriteJSON(Message{
+			Type:    "game_state",
+			Payload: marshalGameState(),
+		}); err != nil {
+			log.Println("Write error to moderator:", err)
+		}
 	} else {
 		// Check if player is reconnecting
 		var player *Player
@@ -167,11 +174,16 @@ func handlePlayerConnection(conn *websocket.Conn) {
 		}
 		game.Players[registration.Name] = player
 		updateLeaderboard()
+
+		// Send current game state to player while holding the lock
+		if err := conn.WriteJSON(Message{
+			Type:    "game_state",
+			Payload: marshalGameState(),
+		}); err != nil {
+			log.Println("Write error to player:", err)
+		}
 	}
 	game.mu.Unlock()
-
-	// Send current game state
-	sendGameState(conn)
 
 	// Handle messages
 	for {
@@ -363,18 +375,6 @@ func updateLeaderboard() {
 			PlayerName: player.Name,
 			Score:      player.Score,
 		})
-	}
-}
-
-func sendGameState(conn *websocket.Conn) {
-	game.mu.RLock()
-	defer game.mu.RUnlock()
-
-	if err := conn.WriteJSON(Message{
-		Type:    "game_state",
-		Payload: marshalGameState(),
-	}); err != nil {
-		log.Println("Write error:", err)
 	}
 }
 
