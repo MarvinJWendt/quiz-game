@@ -47,11 +47,13 @@ type Player struct {
 }
 
 type Answer struct {
-	PlayerName  string     `json:"playerName"`
-	Text        string     `json:"text"`
-	Status      string     `json:"status"` // "pending", "accepted", "rejected"
-	SubmittedAt time.Time  `json:"submittedAt"`
-	JudgedAt    *time.Time `json:"judgedAt,omitempty"` // Track when the answer was judged
+	PlayerName  string          `json:"playerName"`
+	Text        string          `json:"text"`
+	Status      string          `json:"status"` // "pending", "accepted", "rejected"
+	SubmittedAt time.Time       `json:"submittedAt"`
+	JudgedAt    *time.Time      `json:"judgedAt,omitempty"` // Track when the answer was judged
+	Votes       map[string]bool `json:"votes"`              // playerName -> true (upvote) or false (downvote)
+	VoteScore   int             `json:"voteScore"`          // Net vote score (upvotes - downvotes)
 }
 
 type LeaderboardEntry struct {
@@ -390,9 +392,54 @@ func handlePlayerMessage(playerName string, msg Message) {
 			Text:        answer.Text,
 			Status:      "pending",
 			SubmittedAt: time.Now(),
+			Votes:       make(map[string]bool),
+			VoteScore:   0,
 		}
 
 		game.Answers[playerName] = append(game.Answers[playerName], newAnswer)
+		broadcastGameState()
+
+	case "vote_answer":
+		if !game.RoundEnded {
+			return // Can only vote after round ends
+		}
+
+		var vote struct {
+			TargetPlayerName string `json:"targetPlayerName"`
+			AnswerIndex      int    `json:"answerIndex"`
+			IsUpvote         bool   `json:"isUpvote"`
+		}
+		if err := json.Unmarshal(msg.Payload, &vote); err != nil {
+			log.Println("Vote parse error:", err)
+			return
+		}
+
+		// Check if target player and answer exist
+		answers, exists := game.Answers[vote.TargetPlayerName]
+		if !exists || vote.AnswerIndex < 0 || vote.AnswerIndex >= len(answers) {
+			log.Printf("Invalid vote target: player %s, answer index %d", vote.TargetPlayerName, vote.AnswerIndex)
+			return
+		}
+
+		answer := &answers[vote.AnswerIndex]
+
+		// Remove previous vote if exists
+		if previousVote, hasVoted := answer.Votes[playerName]; hasVoted {
+			if previousVote {
+				answer.VoteScore-- // Remove previous upvote
+			} else {
+				answer.VoteScore++ // Remove previous downvote
+			}
+		}
+
+		// Add new vote
+		answer.Votes[playerName] = vote.IsUpvote
+		if vote.IsUpvote {
+			answer.VoteScore++
+		} else {
+			answer.VoteScore--
+		}
+
 		broadcastGameState()
 	}
 }
