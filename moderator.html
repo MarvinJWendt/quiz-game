@@ -137,7 +137,15 @@
                     <template x-for="entry in leaderboard" :key="entry.playerName">
                         <div class="flex justify-between items-center py-2 border-b border-base-surface0">
                             <span x-text="entry.playerName" class="text-base-text"></span>
-                            <span class="font-semibold text-base-green" x-text="entry.score"></span>
+                            <div class="flex items-center space-x-2">
+                                <input type="number" 
+                                    :value="entry.score"
+                                    @change="updatePlayerScore(entry.playerName, $event.target.value)"
+                                    @keyup.enter="$event.target.blur()"
+                                    class="w-16 px-2 py-1 text-center bg-base-surface0 text-base-text border border-base-surface1 rounded focus:border-base-blue focus:ring-1 focus:ring-base-blue outline-none"
+                                    min="0">
+                                <span class="text-xs text-base-overlay0">pts</span>
+                            </div>
                         </div>
                     </template>
                 </div>
@@ -148,7 +156,7 @@
                 <h2 class="text-2xl font-bold mb-4 text-base-mauve">Current Answers</h2>
                 <div class="space-y-4">
                     <template x-for="(answers, playerName) in allAnswers" :key="playerName">
-                        <template x-for="answer in answers" :key="answer.submittedAt">
+                        <template x-for="answer in getSortedAnswers(answers)" :key="answer.submittedAt">
                             <div class="border p-4 rounded-lg" :class="{
                                 'bg-base-surface0': answer.status === 'pending',
                                 'bg-[#1e322b]': answer.status === 'accepted',
@@ -173,6 +181,7 @@
                                         }"
                                         x-text="answer.status"></span>
                                 </div>
+                                <div class="text-xs text-base-overlay0 mb-2" x-text="'Submitted: ' + formatTime(answer.submittedAt)"></div>
                                 <p class="text-base-subtext" x-text="answer.text"></p>
                             </div>
                         </template>
@@ -445,6 +454,42 @@
                     this.leaderboard = state.leaderboard;
                     this.allAnswers = state.answers;
                     this.currentRound = state.round;
+                },
+
+                formatTime(timestamp) {
+                    const date = new Date(timestamp);
+                    const hours = date.getHours().toString().padStart(2, '0');
+                    const minutes = date.getMinutes().toString().padStart(2, '0');
+                    const seconds = date.getSeconds().toString().padStart(2, '0');
+                    const milliseconds = date.getMilliseconds().toString().padStart(3, '0');
+                    return `${hours}:${minutes}:${seconds}:${milliseconds}`;
+                },
+
+                getSortedAnswers(answers) {
+                    if (!answers || !Array.isArray(answers)) return [];
+                    return [...answers].sort((a, b) => new Date(a.submittedAt) - new Date(b.submittedAt));
+                },
+
+                updatePlayerScore(playerName, newScore) {
+                    const score = parseInt(newScore, 10);
+                    if (isNaN(score) || score < 0) {
+                        Swal.fire({
+                            title: 'Error!',
+                            text: 'Please enter a valid score (0 or higher)',
+                            icon: 'error',
+                            background: '#1e1e2e',
+                            color: '#cdd6f4'
+                        });
+                        return;
+                    }
+
+                    this.ws.send(JSON.stringify({
+                        type: 'update_score',
+                        payload: {
+                            playerName: playerName,
+                            score: score
+                        }
+                    }));
                 }
             };
         }

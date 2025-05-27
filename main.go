@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -330,6 +331,34 @@ func handleModeratorMessage(msg Message) {
 		game.Players = make(map[string]*Player)
 		game.Leaderboard = make([]LeaderboardEntry, 0)
 		broadcastGameState()
+
+	case "update_score":
+		var scoreUpdate struct {
+			PlayerName string `json:"playerName"`
+			Score      int    `json:"score"`
+		}
+		if err := json.Unmarshal(msg.Payload, &scoreUpdate); err != nil {
+			log.Println("Score update parse error:", err)
+			return
+		}
+
+		// Check if target player exists
+		targetPlayer, exists := game.Players[scoreUpdate.PlayerName]
+		if !exists {
+			log.Printf("Target player %s not found for score update", scoreUpdate.PlayerName)
+			return
+		}
+
+		// Validate score (must be non-negative)
+		if scoreUpdate.Score < 0 {
+			log.Printf("Invalid score %d for player %s", scoreUpdate.Score, scoreUpdate.PlayerName)
+			return
+		}
+
+		// Update the player's score
+		targetPlayer.Score = scoreUpdate.Score
+		updateLeaderboard()
+		broadcastGameState()
 	}
 }
 
@@ -376,6 +405,11 @@ func updateLeaderboard() {
 			Score:      player.Score,
 		})
 	}
+
+	// Sort leaderboard by score in descending order (highest score first)
+	sort.Slice(game.Leaderboard, func(i, j int) bool {
+		return game.Leaderboard[i].Score > game.Leaderboard[j].Score
+	})
 }
 
 func broadcastGameState() {

@@ -227,7 +227,7 @@
                 </h2>
                 <div class="space-y-4" x-data="{ parent: $el }" x-init="autoAnimate(parent)">
                     <template x-for="(answers, playerName) in allAnswers" :key="playerName">
-                        <template x-for="answer in answers" :key="answer.submittedAt">
+                        <template x-for="answer in getSortedAnswers(answers)" :key="answer.submittedAt">
                             <div class="p-4 rounded-lg transition-all duration-200"
                                 :class="{
                                     'bg-base-surface0': answer.status === 'pending',
@@ -251,6 +251,7 @@
                                         'text-base-red': answer.status === 'rejected'
                                     }" x-text="answer.status"></span>
                                 </div>
+                                <div class="text-xs text-base-overlay0 mb-2" x-text="'Submitted: ' + formatTime(answer.submittedAt)"></div>
                                 <p class="text-base-subtext break-words" x-text="answer.text"></p>
                             </div>
                         </template>
@@ -532,6 +533,20 @@
                         background: '#1e1e2e',
                         color: '#cdd6f4'
                     });
+                },
+
+                formatTime(timestamp) {
+                    const date = new Date(timestamp);
+                    const hours = date.getHours().toString().padStart(2, '0');
+                    const minutes = date.getMinutes().toString().padStart(2, '0');
+                    const seconds = date.getSeconds().toString().padStart(2, '0');
+                    const milliseconds = date.getMilliseconds().toString().padStart(3, '0');
+                    return `${hours}:${minutes}:${seconds}:${milliseconds}`;
+                },
+
+                getSortedAnswers(answers) {
+                    if (!answers || !Array.isArray(answers)) return [];
+                    return [...answers].sort((a, b) => new Date(a.submittedAt) - new Date(b.submittedAt));
                 }
             };
         }
