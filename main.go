@@ -33,7 +33,8 @@ type GameState struct {
 
 type Question struct {
 	Text    string    `json:"text"`
-	Type    string    `json:"type"` // "text" or "number"
+	Type    string    `json:"type"`            // "text" or "number"
+	Image   string    `json:"image,omitempty"` // Base64 encoded image data
 	AskedAt time.Time `json:"askedAt"`
 }
 
@@ -73,7 +74,23 @@ var game = GameState{
 func main() {
 	http.HandleFunc("/ws", handleWebSocket)
 
+	// Serve static files
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/" {
+			http.ServeFile(w, r, "index.html")
+		} else if r.URL.Path == "/moderator" {
+			http.ServeFile(w, r, "moderator.html")
+		} else if r.URL.Path == "/test" {
+			http.ServeFile(w, r, "test.html")
+		} else {
+			http.NotFound(w, r)
+		}
+	})
+
 	log.Printf("Starting server on :8080")
+	log.Printf("Player interface: http://localhost:8080/")
+	log.Printf("Moderator interface: http://localhost:8080/moderator")
+	log.Printf("Image test: http://localhost:8080/test")
 	if err := http.ListenAndServe(":8080", nil); err != nil {
 		log.Fatal("ListenAndServe:", err)
 	}

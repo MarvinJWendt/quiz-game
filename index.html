@@ -125,6 +125,13 @@
                 :class="{'animate-pulse-slow': !currentQuestion}">
             </div>
             
+            <!-- Question Image -->
+            <div x-show="currentQuestion?.image" class="mb-6 flex justify-center">
+                <img :src="currentQuestion?.image" 
+                    class="max-w-full max-h-96 object-contain rounded-lg border-2 border-base-surface1 shadow-lg"
+                    alt="Question image">
+            </div>
+            
             <!-- Countdown Timer -->
             <div x-show="countdownTime" 
                 class="flex justify-center items-center mb-6">

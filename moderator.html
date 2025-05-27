@@ -75,8 +75,25 @@
                     <div>
                         <label class="block mb-2 text-base-text">Question Text</label>
                         <textarea x-model="questionText" 
+                            @paste="handlePaste"
                             class="w-full p-2 rounded h-32 bg-base-surface0 text-base-text border border-base-surface1 focus:border-base-blue focus:ring-1 focus:ring-base-blue outline-none"
-                            placeholder="Enter your question..."></textarea>
+                            placeholder="Enter your question... (Paste images from clipboard)"></textarea>
+                    </div>
+                    <div>
+                        <label class="block mb-2 text-base-text">Question Image</label>
+                        <div class="space-y-2">
+                            <input type="file" 
+                                @change="handleImageUpload"
+                                accept="image/*"
+                                class="w-full p-2 rounded bg-base-surface0 text-base-text border border-base-surface1 focus:border-base-blue focus:ring-1 focus:ring-base-blue outline-none">
+                            <div x-show="questionImage" class="relative">
+                                <img :src="questionImage" class="max-w-full h-32 object-contain rounded border border-base-surface1">
+                                <button @click="removeImage" 
+                                    class="absolute top-1 right-1 bg-base-red text-base-mantle rounded-full w-6 h-6 flex items-center justify-center hover:bg-base-maroon transition-colors">
+                                    ×
+                                </button>
+                            </div>
+                        </div>
                     </div>
                     <button @click="askQuestion"
                         class="w-full bg-base-green text-base-mantle py-2 rounded hover:bg-base-teal transition-colors">
@@ -172,6 +189,7 @@
                 connectionError: null,
                 questionType: 'text',
                 questionText: '',
+                questionImage: null,
                 countdownSeconds: 15,
                 leaderboard: [],
                 allAnswers: {},
@@ -293,6 +311,48 @@
                     }
                 },
 
+                handlePaste(event) {
+                    const items = event.clipboardData.items;
+                    for (let i = 0; i < items.length; i++) {
+                        if (items[i].type.indexOf('image') !== -1) {
+                            const file = items[i].getAsFile();
+                            this.processImageFile(file);
+                            event.preventDefault();
+                            break;
+                        }
+                    }
+                },
+
+                handleImageUpload(event) {
+                    const file = event.target.files[0];
+                    if (file) {
+                        this.processImageFile(file);
+                    }
+                },
+
+                processImageFile(file) {
+                    if (file.size > 5 * 1024 * 1024) { // 5MB limit
+                        Swal.fire({
+                            title: 'Error!',
+                            text: 'Image size must be less than 5MB',
+                            icon: 'error',
+                            background: '#1e1e2e',
+                            color: '#cdd6f4'
+                        });
+                        return;
+                    }
+
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        this.questionImage = e.target.result;
+                    };
+                    reader.readAsDataURL(file);
+                },
+
+                removeImage() {
+                    this.questionImage = null;
+                },
+
                 askQuestion() {
                     if (!this.questionText.trim()) {
                         Swal.fire({
@@ -305,15 +365,22 @@
                         return;
                     }
 
+                    const payload = {
+                        text: this.questionText,
+                        type: this.questionType
+                    };
+
+                    if (this.questionImage) {
+                        payload.image = this.questionImage;
+                    }
+
                     this.ws.send(JSON.stringify({
                         type: 'ask_question',
-                        payload: {
-                            text: this.questionText,
-                            type: this.questionType
-                        }
+                        payload: payload
                     }));
 
                     this.questionText = '';
+                    this.questionImage = null;
                 },
 
                 startCountdown() {
